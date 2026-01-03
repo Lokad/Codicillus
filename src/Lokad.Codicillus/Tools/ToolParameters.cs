@@ -11,7 +11,6 @@ public sealed record ShellToolCallParams
     public string? Workdir { get; init; }
 
     [JsonPropertyName("timeout_ms")]
-    [JsonPropertyName("timeout")]
     public long? TimeoutMs { get; init; }
 
     [JsonPropertyName("sandbox_permissions")]
@@ -33,7 +32,6 @@ public sealed record ShellCommandToolCallParams
     public bool? Login { get; init; }
 
     [JsonPropertyName("timeout_ms")]
-    [JsonPropertyName("timeout")]
     public long? TimeoutMs { get; init; }
 
     [JsonPropertyName("sandbox_permissions")]

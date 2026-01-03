@@ -16,6 +16,7 @@ Implement the minimal, provider-agnostic core of Codex in a new .NET 10 library 
 - [x] (2026-01-03 23:05Z) Ported core protocol types and embedded prompt resources.
 - [x] (2026-01-03 23:40Z) Implemented core session, tools, logging hooks, and model catalog.
 - [x] (2026-01-04 00:05Z) Added CLI sample and xUnit test suite coverage.
+- [x] (2026-01-04 00:15Z) Validated build/test and added usage README.
 - [ ] Port Codex protocol types and prompt assembly into C#, including prompt-cache hooks.
 - [ ] Implement context history, truncation, and compaction (local + optional remote).
 - [ ] Add xUnit suite, CLI sample, and validate build.
@@ -30,6 +31,8 @@ Implement the minimal, provider-agnostic core of Codex in a new .NET 10 library 
   Evidence: `code:\openai-codex\codex-rs\core\src\codex.rs`.
 - Observation: Local context compaction uses a summarization prompt and then rebuilds history as initial context + selected user messages + summary.
   Evidence: `code:\openai-codex\codex-rs\core\src\compact.rs`.
+- Observation: A previous timed-out test run left `testhost` running and locked the test DLL during rebuild.
+  Evidence: build retry errors until the process was stopped.
 
 ## Decision Log
 
@@ -51,7 +54,7 @@ Implement the minimal, provider-agnostic core of Codex in a new .NET 10 library 
 
 ## Outcomes & Retrospective
 
-No implementation yet.
+Core library, CLI, and xUnit suite compile and pass tests. Remaining work is future-proofing tool execution (apply_patch) and wiring a real model adapter.
 
 ## Context and Orientation
 
@@ -155,6 +158,10 @@ Expected environment context XML format (example):
       <network_access>enabled</network_access>
       <shell>powershell</shell>
     </environment_context>
+
+Test output (latest):
+
+    Passed!  - Failed:     0, Passed:     9, Skipped:     0, Total:     9
 
 ## Interfaces and Dependencies
 

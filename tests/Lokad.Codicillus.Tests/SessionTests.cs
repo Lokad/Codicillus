@@ -62,7 +62,9 @@ public sealed class SessionTests
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
             LastPrompt = prompt;
-            foreach (var evt in StreamEvents)
+            var events = StreamEvents.ToList();
+            StreamEvents.Clear();
+            foreach (var evt in events)
             {
                 yield return evt;
             }

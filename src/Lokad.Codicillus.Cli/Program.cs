@@ -150,6 +150,15 @@ public sealed class RootCommand
             ModelPrompt prompt,
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
         {
+            if (prompt.Input.OfType<FunctionCallOutputResponseItem>().Any())
+            {
+                var done = new MessageResponseItem("assistant", [new OutputTextContent("Command executed.")], null);
+                yield return new ResponseOutputItemDoneEvent(done);
+                yield return new ResponseCompletedEvent(Guid.NewGuid().ToString("N"), null);
+                await Task.CompletedTask;
+                yield break;
+            }
+
             var lastUser = prompt.Input
                 .OfType<MessageResponseItem>()
                 .LastOrDefault(item => item.Role == "user");

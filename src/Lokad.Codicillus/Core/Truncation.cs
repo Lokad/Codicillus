@@ -131,8 +131,8 @@ public static class Truncation
         var maxBytes = policy.ByteBudget;
         if (maxBytes == 0)
         {
-            var marker = FormatTruncationMarker(policy, RemovedUnitsForSource(policy, text.Length, text.Length));
-            return marker;
+            var zeroMarker = FormatTruncationMarker(policy, RemovedUnitsForSource(policy, text.Length, text.Length));
+            return zeroMarker;
         }
 
         if (text.Length <= maxBytes)
