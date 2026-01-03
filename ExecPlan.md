@@ -3,6 +3,7 @@
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 This plan must be maintained in accordance with `code:\Codicillus\.agent\PLANS.md`.
+After each commit, proceed automatically to the next step without waiting for manual confirmation.
 
 ## Purpose / Big Picture
 
