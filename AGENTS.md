@@ -12,6 +12,7 @@ dotnet test    --tl:off --nologo -v minimal --no-build
 
 - Before every commit, review whether `AGENTS.md` needs updates for new workflows or constraints.
 - After every complex commit, review the full diff and the commit content to confirm there are no accidental or irrelevant changes.
+- Commit messages should avoid personal or machine-specific references. Use a single-line message for small changes and a concise multi-line message for complex changes.
 
 ## ExecPlans
 
