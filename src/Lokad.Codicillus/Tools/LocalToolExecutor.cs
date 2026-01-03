@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Text.Json;
 using Lokad.Codicillus.Abstractions;
 using Lokad.Codicillus.Protocol;
@@ -7,6 +8,15 @@ namespace Lokad.Codicillus.Tools;
 
 public sealed class LocalToolExecutor : IToolExecutor
 {
+    private readonly string _baseDirectory;
+
+    public LocalToolExecutor(string? baseDirectory = null)
+    {
+        _baseDirectory = string.IsNullOrWhiteSpace(baseDirectory)
+            ? Directory.GetCurrentDirectory()
+            : baseDirectory;
+    }
+
     public async Task<ToolResult> ExecuteAsync(ToolCall call, CancellationToken cancellationToken)
     {
         return call switch
@@ -23,15 +33,7 @@ public sealed class LocalToolExecutor : IToolExecutor
         {
             "shell" => await ExecuteShellAsync(call.CallId, call.ArgumentsJson, cancellationToken),
             "shell_command" => await ExecuteShellCommandAsync(call.CallId, call.ArgumentsJson, cancellationToken),
-            "apply_patch" => new FunctionToolResult
-            {
-                CallId = call.CallId,
-                Output = new FunctionCallOutputPayload
-                {
-                    Content = "apply_patch is not implemented by the local executor",
-                    Success = false
-                }
-            },
+            "apply_patch" => await ExecuteApplyPatchAsync(call.CallId, call.ArgumentsJson),
             "view_image" => new FunctionToolResult
             {
                 CallId = call.CallId,
@@ -55,10 +57,65 @@ public sealed class LocalToolExecutor : IToolExecutor
 
     private Task<ToolResult> ExecuteCustomToolAsync(CustomToolCall call, CancellationToken cancellationToken)
     {
+        if (call.Name == "apply_patch")
+        {
+            var result = ApplyPatchEngine.Apply(call.Input, _baseDirectory);
+            return Task.FromResult<ToolResult>(new CustomToolResult
+            {
+                CallId = call.CallId,
+                Output = result.Message
+            });
+        }
+
         return Task.FromResult<ToolResult>(new CustomToolResult
         {
             CallId = call.CallId,
             Output = $"Custom tool '{call.Name}' not implemented"
+        });
+    }
+
+    private Task<ToolResult> ExecuteApplyPatchAsync(string callId, string argsJson)
+    {
+        ApplyPatchToolArgs? args;
+        try
+        {
+            args = JsonSerializer.Deserialize<ApplyPatchToolArgs>(argsJson);
+        }
+        catch (JsonException ex)
+        {
+            return Task.FromResult<ToolResult>(new FunctionToolResult
+            {
+                CallId = callId,
+                Output = new FunctionCallOutputPayload
+                {
+                    Content = $"apply_patch invalid arguments: {ex.Message}",
+                    Success = false
+                }
+            });
+        }
+
+        if (args is null || string.IsNullOrWhiteSpace(args.Input))
+        {
+            return Task.FromResult<ToolResult>(new FunctionToolResult
+            {
+                CallId = callId,
+                Output = new FunctionCallOutputPayload
+                {
+                    Content = "apply_patch missing input",
+                    Success = false
+                }
+            });
+        }
+
+        var result = ApplyPatchEngine.Apply(args.Input, _baseDirectory);
+        return Task.FromResult<ToolResult>(new FunctionToolResult
+        {
+            CallId = callId,
+            Output = new FunctionCallOutputPayload
+            {
+                Content = result.Message,
+                Success = result.Success
+            }
         });
     }
 

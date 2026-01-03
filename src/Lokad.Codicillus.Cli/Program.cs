@@ -1,7 +1,7 @@
-using System.Text.Json;
 using McMaster.Extensions.CommandLineUtils;
 using Lokad.Codicillus.Abstractions;
 using Lokad.Codicillus.Core;
+using Lokad.Codicillus.Models;
 using Lokad.Codicillus.Protocol;
 using Lokad.Codicillus.Tools;
 
@@ -11,7 +11,7 @@ namespace Lokad.Codicillus.Cli;
 public sealed class RootCommand
 {
     [Option("--model <MODEL>", Description = "Model slug to use.")]
-    public string Model { get; } = "gpt-5.2-codex";
+    public string Model { get; } = "gpt-5.1-codex-max";
 
     [Option("--cwd <PATH>", Description = "Working directory for the session.")]
     public string? WorkingDirectory { get; }
@@ -19,28 +19,40 @@ public sealed class RootCommand
     [Option("--once <TEXT>", Description = "Run a single prompt and exit.")]
     public string? Once { get; }
 
-    [Option("--yolo", Description = "Generate tool calls directly from input.")]
-    public bool Yolo { get; }
-
-    [Option("--stub", Description = "Use a stub model adapter that echoes input.")]
-    public bool Stub { get; }
-
     public async Task<int> OnExecuteAsync(CancellationToken cancellationToken)
     {
-        var adapter = CreateModelAdapter();
-        var tools = new LocalToolExecutor();
+        IModelAdapter adapter;
+        try
+        {
+            adapter = CreateModelAdapter();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+        var modelFamily = ModelCatalog.FindFamilyForModel(Model) with
+        {
+            ApplyPatchToolType = ApplyPatchToolType.Function
+        };
         var options = new CodicillusSessionOptions
         {
             Model = Model,
             WorkingDirectory = WorkingDirectory ?? Directory.GetCurrentDirectory(),
             SandboxPolicy = new DangerFullAccessPolicy(),
-            Shell = new ShellInfo(OperatingSystem.IsWindows() ? ShellType.PowerShell : ShellType.Bash)
+            Shell = new ShellInfo(OperatingSystem.IsWindows() ? ShellType.PowerShell : ShellType.Bash),
+            ModelFamilyOverride = modelFamily,
+            DeveloperInstructions = "The apply_patch tool is exposed as a function that takes JSON input: {\"input\":\"...\"}."
         };
+        var tools = new LocalToolExecutor(options.WorkingDirectory);
         var session = new CodicillusSession(adapter, tools, options);
 
         if (!string.IsNullOrWhiteSpace(Once))
         {
-            await RunPromptAsync(session, Once!, cancellationToken);
+            if (!await TryRunPromptAsync(session, Once!, cancellationToken))
+            {
+                return 1;
+            }
             return 0;
         }
 
@@ -57,34 +69,41 @@ public sealed class RootCommand
             {
                 continue;
             }
-            await RunPromptAsync(session, line, cancellationToken);
+            if (!await TryRunPromptAsync(session, line, cancellationToken))
+            {
+                return 1;
+            }
         }
         return 0;
     }
 
     private IModelAdapter CreateModelAdapter()
     {
-        if (Yolo)
-        {
-            return new YoloModelAdapter();
-        }
-        if (Stub)
-        {
-            return new EchoModelAdapter();
-        }
-        return new EchoModelAdapter();
+        return new OpenAIModelAdapter(Model, LoadApiKeyFromEnv());
     }
 
-    private static async Task RunPromptAsync(
+    private static string LoadApiKeyFromEnv()
+    {
+        var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException("OPENAI_API_KEY is not set.");
+        }
+        return apiKey;
+    }
+
+    private static async Task<bool> TryRunPromptAsync(
         CodicillusSession session,
         string input,
         CancellationToken cancellationToken)
     {
-        var userInputs = new[] { new UserInputText(input) };
-        await foreach (var evt in session.RunTurnAsync(userInputs, cancellationToken))
+        try
         {
-            switch (evt)
+            var userInputs = new[] { new UserInputText(input) };
+            await foreach (var evt in session.RunTurnAsync(userInputs, cancellationToken))
             {
+                switch (evt)
+                {
                 case ModelSessionEvent { Event: ResponseOutputItemDoneEvent outputEvent }:
                     if (outputEvent.Item is MessageResponseItem message && message.Role == "assistant")
                     {
@@ -95,85 +114,33 @@ public sealed class RootCommand
                         }
                     }
                     break;
-                case ToolResultSessionEvent toolResult:
-                    Console.WriteLine($"[tool:{toolResult.Result.CallId}] {FormatToolResult(toolResult.Result)}");
+                case ToolCallSessionEvent toolCall:
+                    Console.WriteLine($"[model->tool:{toolCall.Call.CallId}] {FormatToolCall(toolCall.Call)}");
                     break;
             }
         }
-    }
-
-    private static string FormatToolResult(ToolResult result)
-    {
-        return result switch
-        {
-            FunctionToolResult functionResult => functionResult.Output.Content,
-            CustomToolResult customResult => customResult.Output,
-            _ => "unknown tool result"
-        };
-    }
-
-    private sealed class EchoModelAdapter : IModelAdapter
-    {
-        public ModelCapabilities Capabilities { get; } = new()
-        {
-            SupportsPromptCacheKey = true
-        };
-
-        public async IAsyncEnumerable<ResponseEvent> StreamAsync(
-            ModelPrompt prompt,
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-        {
-            var message = prompt.Input
-                .OfType<MessageResponseItem>()
-                .LastOrDefault(item => item.Role == "user");
-            var text = message is null ? string.Empty : Compaction.ContentItemsToText(message.Content);
-            var output = new MessageResponseItem("assistant", [new OutputTextContent(text ?? string.Empty)], null);
-            yield return new ResponseOutputItemDoneEvent(output);
-            yield return new ResponseCompletedEvent(Guid.NewGuid().ToString("N"), null);
-            await Task.CompletedTask;
+        return true;
         }
-
-        public Task<IReadOnlyList<ResponseItem>> CompactAsync(ModelPrompt prompt, CancellationToken cancellationToken)
+        catch (System.ClientModel.ClientResultException ex)
         {
-            return Task.FromResult<IReadOnlyList<ResponseItem>>(Array.Empty<ResponseItem>());
+            Console.Error.WriteLine(ex.Message);
+            return false;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return false;
         }
     }
 
-    private sealed class YoloModelAdapter : IModelAdapter
+    private static string FormatToolCall(ToolCall call)
     {
-        public ModelCapabilities Capabilities { get; } = new()
+        return call switch
         {
-            SupportsPromptCacheKey = true
+            FunctionToolCall functionCall => $"{functionCall.Name} {functionCall.ArgumentsJson}",
+            CustomToolCall customCall => $"{customCall.Name} {customCall.Input}",
+            _ => "unknown tool call"
         };
-
-        public async IAsyncEnumerable<ResponseEvent> StreamAsync(
-            ModelPrompt prompt,
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-        {
-            if (prompt.Input.OfType<FunctionCallOutputResponseItem>().Any())
-            {
-                var done = new MessageResponseItem("assistant", [new OutputTextContent("Command executed.")], null);
-                yield return new ResponseOutputItemDoneEvent(done);
-                yield return new ResponseCompletedEvent(Guid.NewGuid().ToString("N"), null);
-                await Task.CompletedTask;
-                yield break;
-            }
-
-            var lastUser = prompt.Input
-                .OfType<MessageResponseItem>()
-                .LastOrDefault(item => item.Role == "user");
-            var text = lastUser is null ? string.Empty : Compaction.ContentItemsToText(lastUser.Content);
-            var args = JsonSerializer.Serialize(new ShellCommandToolCallParams { Command = text ?? string.Empty });
-            var toolCall = new FunctionCallResponseItem("shell_command", args, Guid.NewGuid().ToString("N"));
-            yield return new ResponseOutputItemDoneEvent(toolCall);
-            yield return new ResponseCompletedEvent(Guid.NewGuid().ToString("N"), null);
-            await Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyList<ResponseItem>> CompactAsync(ModelPrompt prompt, CancellationToken cancellationToken)
-        {
-            return Task.FromResult<IReadOnlyList<ResponseItem>>(Array.Empty<ResponseItem>());
-        }
     }
 }
 
