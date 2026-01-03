@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/Lokad.Codicillus/Lokad.Codicillus.csproj" />
+  <Project Path="src/Lokad.Codicillus.Cli/Lokad.Codicillus.Cli.csproj" />
+  <Project Path="tests/Lokad.Codicillus.Tests/Lokad.Codicillus.Tests.csproj" />
+</Solution>

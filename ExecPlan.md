@@ -12,6 +12,7 @@ Implement the minimal, provider-agnostic core of Codex in a new .NET 10 library 
 ## Progress
 
 - [x] (2026-01-03 22:30Z) Drafted ExecPlan with Codex core alignment notes.
+- [x] (2026-01-03 22:45Z) Scaffolded .slnx, core library, CLI, and xUnit projects.
 - [ ] Define public API surface for Codicillus core (session, model adapter, tools, env, logging).
 - [ ] Port Codex protocol types and prompt assembly into C#, including prompt-cache hooks.
 - [ ] Implement context history, truncation, and compaction (local + optional remote).
