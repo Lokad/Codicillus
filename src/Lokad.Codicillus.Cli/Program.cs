@@ -19,6 +19,9 @@ public sealed class RootCommand
     [Option("--once <TEXT>", Description = "Run a single prompt and exit.")]
     public string? Once { get; }
 
+    [Option("--show-usage", Description = "Print token usage for each response completion.")]
+    public bool ShowUsage { get; }
+
     public async Task<int> OnExecuteAsync(CancellationToken cancellationToken)
     {
         IModelAdapter adapter;
@@ -42,14 +45,15 @@ public sealed class RootCommand
             SandboxPolicy = new DangerFullAccessPolicy(),
             Shell = new ShellInfo(OperatingSystem.IsWindows() ? ShellType.PowerShell : ShellType.Bash),
             ModelFamilyOverride = modelFamily,
-            DeveloperInstructions = "The apply_patch tool is exposed as a function that takes JSON input: {\"input\":\"...\"}."
+            DeveloperInstructions = "The apply_patch tool is exposed as a function that takes JSON input: {\"input\":\"...\"}.",
+            UserInstructions = LoadUserInstructions(WorkingDirectory ?? Directory.GetCurrentDirectory())
         };
         var tools = new LocalToolExecutor(options.WorkingDirectory);
         var session = new CodicillusSession(adapter, tools, options);
 
         if (!string.IsNullOrWhiteSpace(Once))
         {
-            if (!await TryRunPromptAsync(session, Once!, cancellationToken))
+            if (!await TryRunPromptAsync(session, Once!, ShowUsage, cancellationToken))
             {
                 return 1;
             }
@@ -69,7 +73,7 @@ public sealed class RootCommand
             {
                 continue;
             }
-            if (!await TryRunPromptAsync(session, line, cancellationToken))
+            if (!await TryRunPromptAsync(session, line, ShowUsage, cancellationToken))
             {
                 return 1;
             }
@@ -95,6 +99,7 @@ public sealed class RootCommand
     private static async Task<bool> TryRunPromptAsync(
         CodicillusSession session,
         string input,
+        bool showUsage,
         CancellationToken cancellationToken)
     {
         try
@@ -112,6 +117,12 @@ public sealed class RootCommand
                         {
                             Console.WriteLine(text);
                         }
+                    }
+                    break;
+                case ModelSessionEvent { Event: ResponseCompletedEvent completedEvent }:
+                    if (showUsage && completedEvent.TokenUsage is { } usage)
+                    {
+                        Console.WriteLine(FormatUsage(usage));
                     }
                     break;
                 case ToolCallSessionEvent toolCall:
@@ -141,6 +152,17 @@ public sealed class RootCommand
             CustomToolCall customCall => $"{customCall.Name} {customCall.Input}",
             _ => "unknown tool call"
         };
+    }
+
+    private static string FormatUsage(TokenUsage usage)
+    {
+        return $"usage input={usage.InputTokens} cached={usage.CachedInputTokens} output={usage.OutputTokens} total={usage.TotalTokens}";
+    }
+
+    private static string? LoadUserInstructions(string workingDirectory)
+    {
+        var path = Path.Combine(workingDirectory, "AGENTS.md");
+        return File.Exists(path) ? File.ReadAllText(path) : null;
     }
 }
 

@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using Lokad.Codicillus.Abstractions;
 using Lokad.Codicillus.Core;
@@ -19,6 +20,7 @@ namespace Lokad.Codicillus.Cli;
 internal sealed class OpenAIModelAdapter : IModelAdapter
 {
     private static readonly JsonSerializerOptions JsonOptions = new();
+    private static readonly byte[] PromptCacheKeyPath = Encoding.UTF8.GetBytes("$.prompt_cache_key");
     private readonly ResponsesClient _client;
     private readonly string _model;
 
@@ -48,6 +50,12 @@ internal sealed class OpenAIModelAdapter : IModelAdapter
         };
         // The Responses API conversation id must come from a prior response;
         // do not map the prompt cache key directly.
+#pragma warning disable SCME0001 // Why: the SDK marks Patch experimental, but we must inject prompt_cache_key for caching parity.
+        if (!string.IsNullOrWhiteSpace(prompt.PromptCacheKey))
+        {
+            options.Patch.Set(PromptCacheKeyPath, prompt.PromptCacheKey);
+        }
+#pragma warning restore SCME0001
 
         foreach (var item in prompt.Input)
         {
@@ -334,7 +342,9 @@ internal sealed class OpenAIModelAdapter : IModelAdapter
         return new TokenUsage
         {
             InputTokens = usage.InputTokenCount,
+            CachedInputTokens = usage.InputTokenDetails?.CachedTokenCount ?? 0,
             OutputTokens = usage.OutputTokenCount,
+            ReasoningOutputTokens = usage.OutputTokenDetails?.ReasoningTokenCount ?? 0,
             TotalTokens = usage.TotalTokenCount
         };
     }
